@@ -1,0 +1,42 @@
+name: Build APK
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: "Your website address, like https://princerajak.site.je/ (keep the ending /)"
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: unzip -q partarkaar_app.zip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build the app
+        working-directory: partarkaar_app
+        env:
+          SITE_URL: ${{ inputs.site_url }}
+        run: |
+          sed -i "s|https://YOURDOMAIN.example/|$SITE_URL|" lib/config.dart
+          flutter create --org com.partarkaar --project-name partarkaar_app .
+          python3 - <<'PY'
+          import re
+          p = 'android/app/src/main/AndroidManifest.xml'
+          s = open(p, encoding='utf-8').read()
+          s = re.sub(r'(<manifest[^>]*>)', r'\1\n    <uses-permission android:name="android.permission.INTERNET"/>', s, count=1)
+          s = s.replace('<application', '<queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n    <application', 1)
+          open(p, 'w', encoding='utf-8').write(s)
+          PY
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: partarkaar-apk
+          path: partarkaar_app/build/app/outputs/flutter-apk/app-release.apk
